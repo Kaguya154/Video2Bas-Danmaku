@@ -120,21 +120,28 @@ func FlipSvgPath(d string, viewBoxH int) string {
 }
 
 func GenerateAllBasText(frames []v2btypes.FrameData, viewBoxW, viewBoxH int, framerate, startTime float64) []string {
+	return GenerateAllBasTextWithParallel(frames, viewBoxW, viewBoxH, framerate, startTime, 4)
+}
 
+// GenerateAllBasTextWithParallel 支持并发上限
+func GenerateAllBasTextWithParallel(frames []v2btypes.FrameData, viewBoxW, viewBoxH int, framerate, startTime float64, parallel int) []string {
 	results := make([]string, len(frames))
-
 	var wg sync.WaitGroup
+	if parallel <= 0 {
+		parallel = 1
+	}
+	sem := make(chan struct{}, parallel)
 	for i, f := range frames {
 		wg.Add(1)
 		go func(idx int, frame v2btypes.FrameData) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			bas := GenerateBasText(frame, viewBoxW, viewBoxH, framerate, startTime)
 			results[idx] = bas
 		}(i, f)
 	}
-
 	wg.Wait()
-
 	return results
 }
 

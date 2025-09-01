@@ -128,20 +128,26 @@ func SplitColors(frame v2btypes.Frame, rgb []color.RGBA) (v2btypes.FrameLayers, 
 	return v2btypes.FrameLayers{Index: frame.Index, Layers: layers}, nil
 }
 
-// SplitAllFrames 对多帧进行颜色分层（并行版）
-func SplitAllFramesAuto(frames []v2btypes.Frame, colorCount int) ([]v2btypes.FrameLayers, error) {
+// SplitAllFrames 对多帧进行颜色分层（并行版，带并发上限）
+func SplitAllFramesAuto(frames []v2btypes.Frame, colorCount int, parallel int) ([]v2btypes.FrameLayers, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("no frames provided")
+	}
+	if parallel <= 0 {
+		parallel = 1
 	}
 
 	results := make([]v2btypes.FrameLayers, len(frames))
 	errs := make(chan error, len(frames))
+	sem := make(chan struct{}, parallel)
 
 	var wg sync.WaitGroup
 	for i, f := range frames {
 		wg.Add(1)
 		go func(idx int, frame v2btypes.Frame) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			layers, err := SplitColorsAuto(frame, colorCount)
 			if err != nil {
 				errs <- err
@@ -162,22 +168,28 @@ func SplitAllFramesAuto(frames []v2btypes.Frame, colorCount int) ([]v2btypes.Fra
 }
 
 // SplitAllFrames 对多帧进行颜色分层（并行版）
-func SplitAllFrames(frames []v2btypes.Frame, rgb []color.RGBA) ([]v2btypes.FrameLayers, error) {
+func SplitAllFrames(frames []v2btypes.Frame, rgb []color.RGBA, parallel int) ([]v2btypes.FrameLayers, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("no frames provided")
 	}
 	if len(rgb) == 0 {
 		return nil, errors.New("empty palette")
 	}
+	if parallel <= 0 {
+		parallel = 1
+	}
 
 	results := make([]v2btypes.FrameLayers, len(frames))
 	errs := make(chan error, len(frames))
+	sem := make(chan struct{}, parallel)
 
 	var wg sync.WaitGroup
 	for i, f := range frames {
 		wg.Add(1)
 		go func(idx int, frame v2btypes.Frame) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			layers, err := SplitColors(frame, rgb)
 			if err != nil {
 				errs <- err

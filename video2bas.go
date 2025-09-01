@@ -14,8 +14,8 @@ import (
 	"github.com/rustyoz/svg"
 )
 
-func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, colorCount, maxFileSize int, outputPath string) {
-	basLines := generateBas(ctx, videoPath, fps, maxWidth, colorCount)
+func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, colorCount, maxFileSize int, outputPath string, parallel int) {
+	basLines := generateBas(ctx, videoPath, fps, maxWidth, colorCount, parallel)
 
 	//检查outputPath的目录是否存在，不存在则创建
 	if strings.Contains(outputPath, "/") {
@@ -61,7 +61,7 @@ func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, col
 	log.Println("Output Bas files count:", fileId)
 }
 
-func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCount int) []string {
+func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCount int, parallel int) []string {
 	log.Println("Extracting frames from video...")
 	frames, err := video2color.ExtractFrames(ctx, videoPath, fps, maxWidth)
 	if err != nil {
@@ -69,7 +69,7 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 		log.Fatal(err)
 	}
 	log.Printf("Extracted %d frames\n", len(frames))
-	frameLayers, err := video2color.SplitAllFramesAuto(frames, colorCount)
+	frameLayers, err := video2color.SplitAllFramesAuto(frames, colorCount, parallel)
 	if err != nil {
 		log.Println("Error extracting frames:")
 		log.Fatal(err)
@@ -80,7 +80,7 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 		log.Println("Error converting frames:")
 		log.Fatal(err)
 	}
-	data := svg2json.ParseAllFrame(svgLayers)
+	data := svg2json.ParseAllFrameWithParallel(svgLayers, parallel)
 
 	svgData := svgLayers[0].Layers[0].SVGData
 	parsed, err := svg.ParseSvg(svgData, "example", 1.0)
@@ -102,5 +102,5 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 	height := int(floats[3] * 10)
 
 	log.Println("Generating BAS code...")
-	return json2bas.GenerateAllBasText(data, width, height, float64(fps), 0)
+	return json2bas.GenerateAllBasTextWithParallel(data, width, height, float64(fps), 0, parallel)
 }

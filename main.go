@@ -13,6 +13,7 @@ func main() {
 	colorCount := flag.Int("colors", 4, "颜色数量")
 	savePath := flag.String("output", "output/video", "输出文件路径")
 	maxFileSize := flag.Int("maxsize", 2*1024*1024, "单个输出文件最大尺寸，单位字节")
+	parallel := flag.Int("parallel", 4, "并行处理的最大协程数")
 
 	help := flag.Bool("help", false, "显示帮助信息")
 	flag.Parse()
@@ -27,5 +28,5 @@ func main() {
 
 	ctx := context.Background()
 
-	generateBasToFile(ctx, *videoPath, *fps, *maxWidth, *colorCount, *maxFileSize, *savePath)
+	generateBasToFile(ctx, *videoPath, *fps, *maxWidth, *colorCount, *maxFileSize, *savePath, *parallel)
 }

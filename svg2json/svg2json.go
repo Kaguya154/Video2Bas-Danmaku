@@ -12,13 +12,24 @@ import (
 
 // ParseAllFrame 并发解析所有 FrameSVG
 func ParseAllFrame(frames []v2btypes.FrameSVG) []v2btypes.FrameData {
+	return ParseAllFrameWithParallel(frames, 4)
+}
+
+// ParseAllFrameWithParallel 并发解析所有 FrameSVG，带并发上限
+func ParseAllFrameWithParallel(frames []v2btypes.FrameSVG, parallel int) []v2btypes.FrameData {
 	results := make([]v2btypes.FrameData, len(frames))
 	var wg sync.WaitGroup
+	if parallel <= 0 {
+		parallel = 1
+	}
+	sem := make(chan struct{}, parallel)
 
 	for i, f := range frames {
 		wg.Add(1)
 		go func(idx int, frame v2btypes.FrameSVG) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			layers := ParseFrame(frame)
 			results[idx] = layers
 		}(i, f)
