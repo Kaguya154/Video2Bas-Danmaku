@@ -3,7 +3,7 @@ package color2svg
 import (
 	"bytes"
 	"image"
-	v2btypes "src/type"
+	v2btypes "video2bas/type"
 
 	"github.com/gotranspile/gotrace"
 )
@@ -30,6 +30,36 @@ func ConvertToSVG(frames []v2btypes.FrameLayers) ([]v2btypes.FrameSVG, error) {
 			}
 		}
 		result[fi] = fsvg
+	}
+
+	return result, nil
+}
+
+// ConvertToSVGWithProgress 支持进度回调
+func ConvertToSVGWithProgress(frames []v2btypes.FrameLayers, progress func()) ([]v2btypes.FrameSVG, error) {
+	result := make([]v2btypes.FrameSVG, len(frames))
+
+	for fi, frame := range frames {
+		fsvg := v2btypes.FrameSVG{
+			FrameIndex: frame.Index,
+			Layers:     make([]v2btypes.LayerSVG, len(frame.Layers)),
+		}
+
+		for li, layer := range frame.Layers {
+			svgStr, err := traceGrayToSVG(layer.Mask)
+			if err != nil {
+				return nil, err
+			}
+			fsvg.Layers[li] = v2btypes.LayerSVG{
+				ColorIndex: li,
+				Color:      layer.Color,
+				SVGData:    svgStr,
+			}
+		}
+		result[fi] = fsvg
+		if progress != nil {
+			progress()
+		}
 	}
 
 	return result, nil

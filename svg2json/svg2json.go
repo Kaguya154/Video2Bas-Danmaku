@@ -5,9 +5,9 @@ import (
 	"encoding/xml"
 	"fmt"
 	"image/color"
-	v2btypes "src/type"
 	"strings"
 	"sync"
+	v2btypes "video2bas/type"
 )
 
 // ParseAllFrame 并发解析所有 FrameSVG
@@ -32,6 +32,33 @@ func ParseAllFrameWithParallel(frames []v2btypes.FrameSVG, parallel int) []v2bty
 			defer func() { <-sem }()
 			layers := ParseFrame(frame)
 			results[idx] = layers
+		}(i, f)
+	}
+
+	wg.Wait()
+	return results
+}
+
+// ParseAllFrameWithParallelProgress 并发解析所有 FrameSVG，带并发上限和进度回调
+func ParseAllFrameWithParallelProgress(frames []v2btypes.FrameSVG, parallel int, progress func()) []v2btypes.FrameData {
+	results := make([]v2btypes.FrameData, len(frames))
+	var wg sync.WaitGroup
+	if parallel <= 0 {
+		parallel = 1
+	}
+	sem := make(chan struct{}, parallel)
+
+	for i, f := range frames {
+		wg.Add(1)
+		go func(idx int, frame v2btypes.FrameSVG) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			layers := ParseFrame(frame)
+			results[idx] = layers
+			if progress != nil {
+				progress()
+			}
 		}(i, f)
 	}
 

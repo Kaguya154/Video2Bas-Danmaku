@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	v2btypes "src/type"
 	"strconv"
 	"strings"
 	"sync"
+	v2btypes "video2bas/type"
 )
 
 const (

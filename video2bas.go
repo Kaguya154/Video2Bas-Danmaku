@@ -4,12 +4,14 @@ import (
 	"context"
 	"log"
 	"os"
-	"src/color2svg"
-	"src/json2bas"
-	"src/svg2json"
-	video2color "src/video2color"
 	"strconv"
 	"strings"
+	"time"
+	"video2bas/color2svg"
+	"video2bas/json2bas"
+	"video2bas/svg2json"
+	v2btypes "video2bas/type"
+	"video2bas/video2color"
 
 	"github.com/rustyoz/svg"
 )
@@ -69,18 +71,81 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 		log.Fatal(err)
 	}
 	log.Printf("Extracted %d frames\n", len(frames))
-	frameLayers, err := video2color.SplitAllFramesAuto(frames, colorCount, parallel)
+
+	log.Println("Splitting frames into color layers...")
+	// 进度监控：分层
+	frameLayers := make([]v2btypes.FrameLayers, len(frames))
+	var splitDoneCount int
+	splitDoneCh := make(chan int, len(frames))
+	stopSplitProgress := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("[Progress] Splitting: %d/%d", splitDoneCount, len(frames))
+			case <-stopSplitProgress:
+				return
+			}
+		}
+	}()
+	frameLayers, err = video2color.SplitAllFramesAutoWithProgress(frames, colorCount, parallel, func() {
+		splitDoneCount++
+		splitDoneCh <- 1
+	})
+	close(stopSplitProgress)
 	if err != nil {
 		log.Println("Error extracting frames:")
 		log.Fatal(err)
 	}
 	log.Println("Converting frames to SVG...")
-	svgLayers, err := color2svg.ConvertToSVG(frameLayers)
+
+	// 进度监控：SVG
+	svgLayers := make([]v2btypes.FrameSVG, len(frameLayers))
+	var svgDoneCount int
+	stopSvgProgress := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("[Progress] Converting SVG: %d/%d", svgDoneCount, len(frameLayers))
+			case <-stopSvgProgress:
+				return
+			}
+		}
+	}()
+	svgLayers, err = color2svg.ConvertToSVGWithProgress(frameLayers, func() {
+		svgDoneCount++
+	})
+	close(stopSvgProgress)
 	if err != nil {
 		log.Println("Error converting frames:")
 		log.Fatal(err)
 	}
-	data := svg2json.ParseAllFrameWithParallel(svgLayers, parallel)
+
+	// 进度监控：SVG2JSON
+	data := make([]v2btypes.FrameData, len(svgLayers))
+	var jsonDoneCount int
+	stopJsonProgress := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				log.Printf("[Progress] Transform svg data: %d/%d", jsonDoneCount, len(svgLayers))
+			case <-stopJsonProgress:
+				return
+			}
+		}
+	}()
+	data = svg2json.ParseAllFrameWithParallelProgress(svgLayers, parallel, func() {
+		jsonDoneCount++
+	})
+	close(stopJsonProgress)
 
 	svgData := svgLayers[0].Layers[0].SVGData
 	parsed, err := svg.ParseSvg(svgData, "example", 1.0)

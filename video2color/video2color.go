@@ -12,10 +12,10 @@ import (
 	"math"
 	"os"
 	"sort"
-	v2btypes "src/type"
 	"strconv"
 	"strings"
 	"sync"
+	v2btypes "video2bas/type"
 
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
@@ -128,7 +128,49 @@ func SplitColors(frame v2btypes.Frame, rgb []color.RGBA) (v2btypes.FrameLayers, 
 	return v2btypes.FrameLayers{Index: frame.Index, Layers: layers}, nil
 }
 
-// SplitAllFrames 对多帧进行颜色分层（并行版，带并发上限）
+// SplitAllFrames 对多帧进行颜色分层（并行版）
+func SplitAllFrames(frames []v2btypes.Frame, rgb []color.RGBA, parallel int) ([]v2btypes.FrameLayers, error) {
+	if len(frames) == 0 {
+		return nil, errors.New("no frames provided")
+	}
+	if len(rgb) == 0 {
+		return nil, errors.New("empty palette")
+	}
+	if parallel <= 0 {
+		parallel = 1
+	}
+
+	results := make([]v2btypes.FrameLayers, len(frames))
+	errs := make(chan error, len(frames))
+	sem := make(chan struct{}, parallel)
+
+	var wg sync.WaitGroup
+	for i, f := range frames {
+		wg.Add(1)
+		go func(idx int, frame v2btypes.Frame) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			layers, err := SplitColors(frame, rgb)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results[idx] = layers
+		}(i, f)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	// 返回第一个错误（如果有）
+	for err := range errs {
+		return nil, err
+	}
+	return results, nil
+}
+
+// SplitAllFramesAuto 对多帧进行颜色分层（并行版，带并发上限）
 func SplitAllFramesAuto(frames []v2btypes.Frame, colorCount int, parallel int) ([]v2btypes.FrameLayers, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("no frames provided")
@@ -167,13 +209,10 @@ func SplitAllFramesAuto(frames []v2btypes.Frame, colorCount int, parallel int) (
 	return results, nil
 }
 
-// SplitAllFrames 对多帧进行颜色分层（并行版）
-func SplitAllFrames(frames []v2btypes.Frame, rgb []color.RGBA, parallel int) ([]v2btypes.FrameLayers, error) {
+// SplitAllFramesAutoWithProgress 支持进度回调
+func SplitAllFramesAutoWithProgress(frames []v2btypes.Frame, colorCount int, parallel int, progress func()) ([]v2btypes.FrameLayers, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("no frames provided")
-	}
-	if len(rgb) == 0 {
-		return nil, errors.New("empty palette")
 	}
 	if parallel <= 0 {
 		parallel = 1
@@ -190,19 +229,21 @@ func SplitAllFrames(frames []v2btypes.Frame, rgb []color.RGBA, parallel int) ([]
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			layers, err := SplitColors(frame, rgb)
+			layers, err := SplitColorsAuto(frame, colorCount)
 			if err != nil {
 				errs <- err
 				return
 			}
 			results[idx] = layers
+			if progress != nil {
+				progress()
+			}
 		}(i, f)
 	}
 
 	wg.Wait()
 	close(errs)
 
-	// 返回第一个错误（如果有）
 	for err := range errs {
 		return nil, err
 	}

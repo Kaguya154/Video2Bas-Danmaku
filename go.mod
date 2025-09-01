@@ -1,4 +1,4 @@
-module src
+module video2bas
 
 go 1.24
 
