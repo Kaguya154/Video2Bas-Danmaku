@@ -16,6 +16,22 @@ import (
 
 func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, colorCount, maxFileSize int, outputPath string) {
 	basLines := generateBas(ctx, videoPath, fps, maxWidth, colorCount)
+
+	//检查outputPath的目录是否存在，不存在则创建
+	if strings.Contains(outputPath, "/") {
+		dir := strings.TrimRight(outputPath, "/")
+		if dir != "" {
+			dir = dir[:strings.LastIndex(dir, "/")]
+			if dir != "" {
+				err := os.MkdirAll(dir, os.ModePerm)
+				log.Println("Output directory:", dir)
+				if err != nil {
+					log.Fatal(err)
+				}
+			}
+		}
+	}
+
 	fileId := 0
 	currentFileSize := 0
 	var currentFile *os.File
@@ -26,7 +42,7 @@ func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, col
 			if currentFile != nil {
 				currentFile.Close()
 			}
-			currentFile, err = os.Create(outputPath + "_" + strconv.Itoa(fileId) + ".bas")
+			currentFile, err = os.Create(outputPath + "_" + strconv.Itoa(fileId) + ".bas.txt")
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -42,6 +58,7 @@ func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, col
 	if currentFile != nil {
 		currentFile.Close()
 	}
+	log.Println("Output Bas files count:", fileId+1)
 }
 
 func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCount int) []string {
@@ -64,6 +81,7 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 		log.Fatal(err)
 	}
 	data := svg2json.ParseAllFrame(svgLayers)
+
 	svgData := svgLayers[0].Layers[0].SVGData
 	parsed, err := svg.ParseSvg(svgData, "example", 1.0)
 	if err != nil {
@@ -72,10 +90,17 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 	box := parsed.ViewBox
 	//从box读取4个float64
 	split := strings.Split(box, " ")
-	ints := make([]int, 4)
+	floats := make([]float64, 4)
 	for idx, s := range split {
-		ints[idx], _ = strconv.Atoi(s)
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		floats[idx] = f
 	}
+	width := int(floats[2] * 10)
+	height := int(floats[3] * 10)
+
 	log.Println("Generating BAS code...")
-	return json2bas.GenerateAllBasText(data, ints[2]*10, ints[3]*10, float64(fps), 0)
+	return json2bas.GenerateAllBasText(data, width, height, float64(fps), 0)
 }

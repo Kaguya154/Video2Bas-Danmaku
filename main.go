@@ -11,8 +11,8 @@ func main() {
 	fps := flag.Int("fps", 10, "每秒帧数")
 	maxWidth := flag.Int("width", 96, "最大宽度")
 	colorCount := flag.Int("colors", 4, "颜色数量")
-	savePath := flag.String("output", "output.bas", "输出文件路径")
-	maxFileSize := flag.Int("maxsize", 100*1024, "单个输出文件最大尺寸，单位字节")
+	savePath := flag.String("output", "output/video", "输出文件路径")
+	maxFileSize := flag.Int("maxsize", 2*1024*1024, "单个输出文件最大尺寸，单位字节")
 
 	help := flag.Bool("help", false, "显示帮助信息")
 	flag.Parse()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 	"io"
 	"math"
 	"os"
@@ -23,43 +24,44 @@ func ExtractFrames(ctx context.Context, videoPath string, fps, maxWidth int) ([]
 	if fps <= 0 {
 		fps = 1
 	}
-
 	r, w := io.Pipe()
 
-	cmd := ffmpeg.Input(videoPath).
-		Output("pipe:1", ffmpeg.KwArgs{
-			"format": "image2pipe",
-			"vcodec": "png",
-			"r":      strconv.Itoa(fps),
-			"vf":     fmt.Sprintf("scale=%d:-1", maxWidth),
-		}).
-		WithOutput(w).
-		WithErrorOutput(os.Stderr)
-	cmd.Context = ctx
+	go func() {
+		defer w.Close()
+		cmd := ffmpeg.Input(videoPath).
+			Output("pipe:1", ffmpeg.KwArgs{
+				"format":   "image2pipe",
+				"vcodec":   "png",
+				"r":        strconv.Itoa(fps),
+				"vf":       fmt.Sprintf("scale=%d:-1", maxWidth),
+				"loglevel": "error",
+			}).
+			WithOutput(w).
+			WithErrorOutput(os.Stderr)
 
-	err := cmd.Run()
-	if err != nil {
-		return nil, err
-	}
-
-	//从reader读取512字节，打印为HEX
-	var buf [512]byte
-	n, _ := r.Read(buf[:])
-	fmt.Printf("read %d bytes: %x\n", n, buf[:n])
+		err := cmd.Run()
+		if err != nil {
+			w.CloseWithError(fmt.Errorf("ffmpeg error: %w", err))
+			return
+		}
+	}()
 
 	var frames []v2btypes.Frame
 	reader := bufio.NewReader(r)
 	index := 0
 
 	for {
-		img, _, err := image.Decode(reader)
-		if errors.Is(err, io.EOF) {
-			break
-		}
+		img, err := png.Decode(reader)
 		if err != nil {
-
+			if errors.Is(err, io.EOF) {
+				break // 正常结束
+			}
+			if strings.Contains(err.Error(), "unexpected EOF") {
+				break // 管道最后一帧解码完后会出现 EOF，直接退出
+			}
 			return nil, fmt.Errorf("decode frame %d failed: %w", index, err)
 		}
+
 		frames = append(frames, v2btypes.Frame{Index: index, Image: img})
 		index++
 	}
@@ -67,7 +69,6 @@ func ExtractFrames(ctx context.Context, videoPath string, fps, maxWidth int) ([]
 	if len(frames) == 0 {
 		return nil, errors.New("no frames extracted")
 	}
-
 	return frames, nil
 }
 
