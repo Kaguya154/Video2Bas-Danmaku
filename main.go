@@ -30,7 +30,7 @@ func main() {
 	ctx := context.Background()
 
 	if *serial {
-		generateBasToFileSerial(ctx, *videoPath, *fps, *maxWidth, *colorCount, *maxFileSize, *savePath)
+		generateBasSerial(ctx, *videoPath, *fps, *maxWidth, *colorCount, *maxFileSize, *savePath)
 	} else {
 		generateBasToFile(ctx, *videoPath, *fps, *maxWidth, *colorCount, *maxFileSize, *savePath, *parallel)
 	}

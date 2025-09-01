@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"image/png"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -172,10 +174,18 @@ func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCoun
 	return json2bas.GenerateAllBasTextWithParallel(data, width, height, float64(fps), 0, parallel)
 }
 
-func generateBasToFileSerial(ctx context.Context, videoPath string, fps, maxWidth, colorCount, maxFileSize int, outputPath string) {
-	basLines := generateBasSerial(ctx, videoPath, fps, maxWidth, colorCount)
+// 串行处理，最大程度减少内存占用，直接写入文件
+func generateBasSerial(ctx context.Context, videoPath string, fps, maxWidth, colorCount int, maxFileSize int, outputPath string) {
+	log.Println("Extracting frames from video (streaming)...")
 
-	//检查outputPath的目录是否存在，不存在则创建
+	reader, closer, err := video2color.ExtractFramesStream(ctx, videoPath, fps, maxWidth)
+	if err != nil {
+		log.Println("Error extracting frames:")
+		log.Fatal(err)
+	}
+	defer closer.Close()
+
+	// 检查outputPath的目录是否存在，不存在则创建
 	if strings.Contains(outputPath, "/") {
 		dir := strings.TrimRight(outputPath, "/")
 		if dir != "" {
@@ -193,50 +203,26 @@ func generateBasToFileSerial(ctx context.Context, videoPath string, fps, maxWidt
 	fileId := 0
 	currentFileSize := 0
 	var currentFile *os.File
-	var err error
-	for _, line := range basLines {
-		lineSize := len(line) + 1 // +1 for newline
-		if currentFile == nil || currentFileSize+lineSize > maxFileSize {
-			if currentFile != nil {
-				currentFile.Close()
-			}
-			currentFile, err = os.Create(outputPath + "_" + strconv.Itoa(fileId) + ".bas.txt")
-			if err != nil {
-				log.Fatal(err)
-			}
-			fileId++
-			currentFileSize = 0
+
+	openNewFile := func() {
+		if currentFile != nil {
+			currentFile.Close()
 		}
-		_, err := currentFile.WriteString(line + "\n")
+		var err error
+		currentFile, err = os.Create(outputPath + "_" + strconv.Itoa(fileId) + ".bas.txt")
 		if err != nil {
 			log.Fatal(err)
 		}
-		currentFileSize += lineSize
+		fileId++
+		currentFileSize = 0
 	}
-	if currentFile != nil {
-		currentFile.Close()
-	}
-	log.Println("Output Bas files count:", fileId)
-}
-
-// 串行处理，最大程度减少内存占用
-func generateBasSerial(ctx context.Context, videoPath string, fps, maxWidth, colorCount int) []string {
-	log.Println("Extracting frames from video...")
-	frames, err := video2color.ExtractFrames(ctx, videoPath, fps, maxWidth)
-	if err != nil {
-		log.Println("Error extracting frames:")
-		log.Fatal(err)
-	}
-	log.Printf("Extracted %d frames\n", len(frames))
-
-	basLines := make([]string, 0, len(frames))
+	openNewFile()
 
 	// 获取宽高
 	var width, height int
 	var boxParsed bool
 
-	var splitDoneCount, svgDoneCount, jsonDoneCount int
-	total := len(frames)
+	var splitDoneCount, svgDoneCount, jsonDoneCount, total int
 
 	// 进度打印
 	stopProgress := make(chan struct{})
@@ -246,25 +232,36 @@ func generateBasSerial(ctx context.Context, videoPath string, fps, maxWidth, col
 		for {
 			select {
 			case <-ticker.C:
-				log.Printf("[Serial Progress] Split: %d/%d, SVG: %d/%d, JSON: %d/%d", splitDoneCount, total, svgDoneCount, total, jsonDoneCount, total)
+				log.Printf("[Serial Progress] Split: %d, SVG: %d, JSON: %d, Total: %d", splitDoneCount, svgDoneCount, jsonDoneCount, total)
 			case <-stopProgress:
 				return
 			}
 		}
 	}()
 
-	for i, frame := range frames {
+	frameIndex := 0
+	for {
+		img, err := png.Decode(reader)
+		if err != nil {
+			if err == io.EOF || strings.Contains(err.Error(), "unexpected EOF") {
+				break
+			}
+			log.Fatalf("decode frame %d failed: %v", frameIndex, err)
+		}
+		frame := v2btypes.Frame{Index: frameIndex, Image: img}
+		total++
+
 		// 分层
 		frameLayers, err := video2color.SplitColorsAuto(frame, colorCount)
 		if err != nil {
-			log.Fatalf("SplitColorsAuto error at frame %d: %v", i, err)
+			log.Fatalf("SplitColorsAuto error at frame %d: %v", frame.Index, err)
 		}
 		splitDoneCount++
 
 		// 转SVG
 		svgLayers, err := color2svg.ConvertToSVG([]v2btypes.FrameLayers{frameLayers})
 		if err != nil {
-			log.Fatalf("ConvertToSVG error at frame %d: %v", i, err)
+			log.Fatalf("ConvertToSVG error at frame %d: %v", frame.Index, err)
 		}
 		svgDoneCount++
 
@@ -296,16 +293,31 @@ func generateBasSerial(ctx context.Context, videoPath string, fps, maxWidth, col
 
 		// 生成BAS
 		bas := json2bas.GenerateAllBasText(data, width, height, float64(fps), 0)
-		basLines = append(basLines, bas...)
+		for _, line := range bas {
+			lineSize := len(line) + 1 // +1 for newline
+			if currentFileSize+lineSize > maxFileSize {
+				openNewFile()
+			}
+			_, err := currentFile.WriteString(line + "\n")
+			if err != nil {
+				log.Fatal(err)
+			}
+			currentFileSize += lineSize
+		}
 
 		// 主动释放内存
 		frameLayers.Layers = nil
 		svgLayers = nil
 		data = nil
 		runtime.GC()
+
+		frameIndex++
 	}
 
+	if currentFile != nil {
+		currentFile.Close()
+	}
 	close(stopProgress)
+	log.Println("Output Bas files count:", fileId)
 	log.Println("Generating BAS code done.")
-	return basLines
 }
