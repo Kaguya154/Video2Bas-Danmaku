@@ -58,7 +58,7 @@ func generateBasToFile(ctx context.Context, videoPath string, fps, maxWidth, col
 	if currentFile != nil {
 		currentFile.Close()
 	}
-	log.Println("Output Bas files count:", fileId+1)
+	log.Println("Output Bas files count:", fileId)
 }
 
 func generateBas(ctx context.Context, videoPath string, fps, maxWidth, colorCount int) []string {

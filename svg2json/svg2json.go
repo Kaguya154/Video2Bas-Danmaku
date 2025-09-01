@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"image/color"
 	v2btypes "src/type"
 	"strings"
 	"sync"
@@ -34,7 +35,7 @@ func ParseFrame(frame v2btypes.FrameSVG) v2btypes.FrameData {
 	for _, layer := range frame.Layers {
 		paths := extractPaths(layer.SVGData)
 		data := map[string]string{
-			"color":    fmt.Sprintf("%d", layer.ColorIndex),
+			"color":    fmt.Sprintf("%s", toHex(layer.Color)),
 			"pathdata": strings.Join(paths, " "),
 		}
 		result = append(result, data)
@@ -44,6 +45,10 @@ func ParseFrame(frame v2btypes.FrameSVG) v2btypes.FrameData {
 		FrameIndex: frame.FrameIndex,
 		Data:       result,
 	}
+}
+
+func toHex(c color.RGBA) string {
+	return fmt.Sprintf("%02X%02X%02X", c.R, c.G, c.B)
 }
 
 // ParseFrameJSON 返回 JSON 字符串

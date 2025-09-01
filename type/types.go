@@ -8,6 +8,7 @@ import (
 // LayerSVG 表示单个颜色图层的 SVG
 type LayerSVG struct {
 	ColorIndex int
+	Color      color.RGBA
 	SVGData    string
 }
 

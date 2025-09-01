@@ -25,6 +25,7 @@ func ConvertToSVG(frames []v2btypes.FrameLayers) ([]v2btypes.FrameSVG, error) {
 			}
 			fsvg.Layers[li] = v2btypes.LayerSVG{
 				ColorIndex: li,
+				Color:      layer.Color,
 				SVGData:    svgStr,
 			}
 		}
